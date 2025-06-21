@@ -256,7 +256,7 @@ halt:
     jmp halt
 
 ; Data section
-boot_msg db 'Femboy Boot Loader v1.0 - Auto Config', 13, 10, 0
+boot_msg db 'Femboy Boot Loader v1.0 - Configuration', 13, 10, 0
 mem_detect_msg db 'Detecting memory...', 0
 drive_detect_msg db 'Detecting drives...', 0
 cpu_detect_msg db 'Detecting CPU...', 0
