@@ -13,7 +13,7 @@ start:
     ; Initialize segments
     cli
     xor ax, ax
-    mov ds, ax
+    mov ds, a
     mov es, ax
     mov ss, ax
     mov sp, STACK_SEGMENT
