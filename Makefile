@@ -59,24 +59,34 @@ test-example: $(DISK_IMG) example-kernel
 	@echo "Testing bootloader with example kernel..."
 	$(QEMU) -fda $(DISK_IMG) -boot a
 
-# Build enhanced bootloader
-enhanced: bootloader_enhanced.asm
-	@echo "Building enhanced bootloader..."
+# Build two-stage enhanced bootloader
+enhanced: bootloader_stage1.asm bootloader_enhanced.asm
+	@echo "Building two-stage enhanced bootloader..."
+	@echo "Building Stage 1..."
+	$(ASM) $(ASMFLAGS) bootloader_stage1.asm -o bootloader_stage1.bin
+	@echo "Building Stage 2 (enhanced)..."
 	$(ASM) $(ASMFLAGS) bootloader_enhanced.asm -o bootloader_enhanced.bin
-	@echo "Enhanced bootloader built successfully!"
+	@echo "Two-stage enhanced bootloader built successfully!"
 
-# Test enhanced bootloader
-test-enhanced: enhanced
+# Create enhanced disk image
+enhanced-image: enhanced
 	@echo "Creating enhanced disk image..."
 	$(DD) if=/dev/zero of=enhanced_boot.img bs=512 count=2880 2>/dev/null
-	$(DD) if=bootloader_enhanced.bin of=enhanced_boot.img conv=notrunc 2>/dev/null
+	@echo "Writing Stage 1 to boot sector..."
+	$(DD) if=bootloader_stage1.bin of=enhanced_boot.img conv=notrunc 2>/dev/null
+	@echo "Writing Stage 2 starting at sector 2..."
+	$(DD) if=bootloader_enhanced.bin of=enhanced_boot.img bs=512 seek=1 conv=notrunc 2>/dev/null
+	@echo "Enhanced disk image created: enhanced_boot.img"
+
+# Test enhanced bootloader
+test-enhanced: enhanced-image
 	@echo "Testing enhanced bootloader..."
 	$(QEMU) -fda enhanced_boot.img -boot a
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	rm -f $(BOOTLOADER_BIN) $(DISK_IMG) kernel.bin bootloader_enhanced.bin enhanced_boot.img example_kernel.bin
+	rm -f $(BOOTLOADER_BIN) $(DISK_IMG) kernel.bin bootloader_enhanced.bin bootloader_stage1.bin enhanced_boot.img example_kernel.bin bootloader_simple.bin
 	@echo "Clean complete!"
 
 # Install dependencies (Ubuntu/Debian)
@@ -94,6 +104,23 @@ install-deps-arch:
 install-deps-mac:
 	@echo "Installing dependencies..."
 	brew install nasm qemu
+
+# UEFI bootloader targets
+uefi:
+	@echo "Building UEFI femboy bootloader..."
+	$(MAKE) -f Makefile.uefi all
+
+test-uefi:
+	@echo "Testing UEFI bootloader..."
+	$(MAKE) -f Makefile.uefi test-uefi
+
+hybrid:
+	@echo "Creating hybrid BIOS+UEFI image..."
+	$(MAKE) -f Makefile.uefi hybrid-image
+
+install-uefi-deps:
+	@echo "Installing UEFI development dependencies..."
+	$(MAKE) -f Makefile.uefi install-deps
 
 # Show disk image info
 info: $(DISK_IMG)
@@ -125,8 +152,13 @@ help:
 	@echo "  test-kernel      - Add a simple test kernel to disk image"
 	@echo "  example-kernel   - Build example kernel"
 	@echo "  test-example     - Test bootloader with example kernel"
-	@echo "  enhanced         - Build enhanced bootloader"
+	@echo "  enhanced         - Build two-stage enhanced bootloader"
+	@echo "  enhanced-image   - Create enhanced disk image"
 	@echo "  test-enhanced    - Test enhanced bootloader"
+	@echo "  uefi             - Build UEFI femboy bootloader"
+	@echo "  test-uefi        - Test UEFI bootloader"
+	@echo "  hybrid           - Create hybrid BIOS+UEFI image"
+	@echo "  install-uefi-deps- Install UEFI development dependencies"
 	@echo "  clean            - Remove build artifacts"
 	@echo "  install-deps     - Install dependencies (Ubuntu/Debian)"
 	@echo "  install-deps-arch- Install dependencies (Arch Linux)"
@@ -135,4 +167,4 @@ help:
 	@echo "  usb              - Create bootable USB (Linux only)"
 	@echo "  help             - Show this help"
 
-.PHONY: all test test-nographic test-kernel example-kernel test-example enhanced test-enhanced clean install-deps install-deps-arch install-deps-mac info usb help
+.PHONY: all test test-nographic test-kernel example-kernel test-example enhanced enhanced-image test-enhanced uefi test-uefi hybrid install-uefi-deps clean install-deps install-deps-arch install-deps-mac info usb help

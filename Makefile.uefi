@@ -1,0 +1,188 @@
+# UEFI Femboy Bootloader Makefile
+
+# Tools
+CC = gcc
+LD = ld
+OBJCOPY = objcopy
+
+# Directories
+GNU_EFI_DIR = /usr/include/efi
+GNU_EFI_LIB_DIR = /usr/lib
+
+# Architecture
+ARCH = x86_64
+EFI_ARCH = x64
+
+# Compiler flags
+CFLAGS = -ffreestanding -fno-stack-protector -fpic \
+         -fshort-wchar -mno-red-zone -maccumulate-outgoing-args \
+         -I$(GNU_EFI_DIR) -I$(GNU_EFI_DIR)/$(ARCH) -I$(GNU_EFI_DIR)/protocol \
+         -DEFI_FUNCTION_WRAPPER -DGNU_EFI_USE_MS_ABI
+
+# Linker flags
+LDFLAGS = -nostdlib -znocombreloc -T $(GNU_EFI_LIB_DIR)/elf_$(ARCH)_efi.lds \
+          -shared -Bsymbolic -L$(GNU_EFI_LIB_DIR) \
+          $(GNU_EFI_LIB_DIR)/crt0-efi-$(ARCH).o
+
+# Libraries
+LIBS = -lefi -lgnuefi
+
+# Files
+UEFI_SRC = femboy_uefi.c
+UEFI_OBJ = femboy_uefi.o
+UEFI_SO = femboy_uefi.so
+UEFI_EFI = BOOTX64.EFI
+
+# ESP (EFI System Partition) structure
+ESP_DIR = esp
+ESP_BOOT_DIR = $(ESP_DIR)/EFI/BOOT
+ESP_FEMBOY_DIR = $(ESP_DIR)/EFI/FEMBOY
+
+# Default target
+all: check-deps $(UEFI_EFI) esp-image
+
+# Check dependencies
+check-deps:
+	@echo "Checking UEFI development dependencies..."
+	@if [ ! -d "$(GNU_EFI_DIR)" ]; then \
+		echo "Error: GNU-EFI headers not found at $(GNU_EFI_DIR)"; \
+		echo "Install with: sudo apt-get install gnu-efi"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(GNU_EFI_LIB_DIR)/libgnuefi.a" ]; then \
+		echo "Error: GNU-EFI libraries not found"; \
+		echo "Install with: sudo apt-get install gnu-efi"; \
+		exit 1; \
+	fi
+	@echo "Dependencies OK!"
+
+# Compile C source to object file
+$(UEFI_OBJ): $(UEFI_SRC)
+	@echo "Compiling UEFI bootloader..."
+	$(CC) $(CFLAGS) -c $(UEFI_SRC) -o $(UEFI_OBJ)
+
+# Link object file to shared library
+$(UEFI_SO): $(UEFI_OBJ)
+	@echo "Linking UEFI bootloader..."
+	$(LD) $(LDFLAGS) $(UEFI_OBJ) -o $(UEFI_SO) $(LIBS)
+
+# Convert shared library to EFI executable
+$(UEFI_EFI): $(UEFI_SO)
+	@echo "Creating EFI executable..."
+	$(OBJCOPY) -j .text -j .sdata -j .data -j .dynamic \
+		-j .dynsym -j .rel -j .rela -j .reloc \
+		--target=efi-app-$(ARCH) $(UEFI_SO) $(UEFI_EFI)
+	@echo "UEFI bootloader created: $(UEFI_EFI)"
+
+# Create ESP (EFI System Partition) structure
+esp-structure:
+	@echo "Creating ESP directory structure..."
+	mkdir -p $(ESP_BOOT_DIR)
+	mkdir -p $(ESP_FEMBOY_DIR)
+
+# Create ESP image
+esp-image: $(UEFI_EFI) esp-structure
+	@echo "Creating ESP image..."
+	cp $(UEFI_EFI) $(ESP_BOOT_DIR)/
+	cp $(UEFI_EFI) $(ESP_FEMBOY_DIR)/femboy.efi
+	
+	# Create startup.nsh for automatic boot
+	echo "femboy.efi" > $(ESP_FEMBOY_DIR)/startup.nsh
+	
+	# Create ESP disk image (32MB FAT32)
+	dd if=/dev/zero of=femboy_uefi.img bs=1M count=32 2>/dev/null
+	mkfs.fat -F 32 femboy_uefi.img > /dev/null 2>&1
+	
+	# Mount and copy files
+	mkdir -p /tmp/esp_mount
+	sudo mount -o loop femboy_uefi.img /tmp/esp_mount
+	sudo cp -r $(ESP_DIR)/* /tmp/esp_mount/
+	sudo umount /tmp/esp_mount
+	rmdir /tmp/esp_mount
+	
+	@echo "ESP image created: femboy_uefi.img"
+
+# Create hybrid image (both BIOS and UEFI bootable)
+hybrid-image: enhanced_boot.img femboy_uefi.img
+	@echo "Creating hybrid BIOS+UEFI image..."
+	
+	# Create larger image (64MB)
+	dd if=/dev/zero of=femboy_hybrid.img bs=1M count=64 2>/dev/null
+	
+	# Create partition table
+	parted femboy_hybrid.img --script \
+		mklabel gpt \
+		mkpart primary fat32 1MiB 33MiB \
+		mkpart primary ext2 33MiB 63MiB \
+		set 1 esp on \
+		set 1 boot on
+	
+	# Write BIOS bootloader to MBR area
+	dd if=enhanced_boot.img of=femboy_hybrid.img conv=notrunc bs=512 count=2880 seek=2048 2>/dev/null
+	
+	# Write UEFI ESP to first partition
+	dd if=femboy_uefi.img of=femboy_hybrid.img conv=notrunc bs=1M seek=1 2>/dev/null
+	
+	@echo "Hybrid image created: femboy_hybrid.img"
+	@echo "This image boots on both BIOS and UEFI systems!"
+
+# Test with QEMU (UEFI)
+test-uefi: femboy_uefi.img
+	@echo "Testing UEFI bootloader with QEMU..."
+	@if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then \
+		echo "Error: QEMU not found. Install with: sudo apt-get install qemu-system-x86"; \
+		exit 1; \
+	fi
+	@if [ ! -f "/usr/share/ovmf/OVMF.fd" ]; then \
+		echo "Error: OVMF UEFI firmware not found."; \
+		echo "Install with: sudo apt-get install ovmf"; \
+		exit 1; \
+	fi
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -drive format=raw,file=femboy_uefi.img
+
+# Test hybrid image
+test-hybrid: femboy_hybrid.img
+	@echo "Testing hybrid image (UEFI mode)..."
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -drive format=raw,file=femboy_hybrid.img
+
+# Install dependencies
+install-deps:
+	@echo "Installing UEFI development dependencies..."
+	sudo apt-get update
+	sudo apt-get install -y gnu-efi gcc binutils parted dosfstools ovmf qemu-system-x86
+
+# Clean
+clean:
+	@echo "Cleaning UEFI build artifacts..."
+	rm -f $(UEFI_OBJ) $(UEFI_SO) $(UEFI_EFI)
+	rm -rf $(ESP_DIR)
+	rm -f femboy_uefi.img femboy_hybrid.img
+
+# Show info
+info:
+	@echo "=== UEFI Femboy Bootloader ==="
+	@echo "Source: $(UEFI_SRC)"
+	@if [ -f "$(UEFI_EFI)" ]; then \
+		echo "EFI executable: $(UEFI_EFI) ($$(stat -c%s $(UEFI_EFI)) bytes)"; \
+	fi
+	@if [ -f "femboy_uefi.img" ]; then \
+		echo "ESP image: femboy_uefi.img ($$(stat -c%s femboy_uefi.img) bytes)"; \
+	fi
+	@if [ -f "femboy_hybrid.img" ]; then \
+		echo "Hybrid image: femboy_hybrid.img ($$(stat -c%s femboy_hybrid.img) bytes)"; \
+	fi
+
+# Help
+help:
+	@echo "Available targets:"
+	@echo "  all              - Build UEFI bootloader and ESP image"
+	@echo "  esp-image        - Create ESP (EFI System Partition) image"
+	@echo "  hybrid-image     - Create hybrid BIOS+UEFI bootable image"
+	@echo "  test-uefi        - Test UEFI bootloader with QEMU"
+	@echo "  test-hybrid      - Test hybrid image with QEMU"
+	@echo "  install-deps     - Install required dependencies"
+	@echo "  clean            - Remove build artifacts"
+	@echo "  info             - Show build information"
+	@echo "  help             - Show this help"
+
+.PHONY: all check-deps esp-structure esp-image hybrid-image test-uefi test-hybrid install-deps clean info help

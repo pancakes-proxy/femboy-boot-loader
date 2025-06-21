@@ -1,19 +1,20 @@
-; Enhanced Bootloader with Auto Configuration
-; Uses config.inc for customizable behavior
+; Enhanced Femboy Bootloader - Stage 2
+; Full-featured bootloader (no 512-byte limit!)
 
 [BITS 16]
-[ORG 0x7C00]
+[ORG 0x1000]
 
+; Include configuration
 %include "config.inc"
 
-start:
+start_stage2:
     ; Store boot drive
     mov [boot_drive], dl
 
     ; Initialize segments
     cli
     xor ax, ax
-    mov ds, a
+    mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, STACK_SEGMENT
@@ -999,6 +1000,17 @@ load_failed_msg db 'FAILED', 13, 10, 0
 trying_alt_boot_msg db 'Trying alternative boot methods...', 13, 10, 0
 critical_error_msg db 'Critical boot error!', 13, 10, 0
 
+; Boot menu messages (missing definitions)
+menu_header db 13, 10, '=== Enhanced Boot Menu ===', 13, 10, 0
+menu_option1 db '  [1] Boot Kernel (default)', 13, 10, 0
+menu_option2 db '  [2] Enter BIOS Setup', 13, 10, 0
+menu_option3 db '  [3] Reboot System', 13, 10, 0
+menu_prompt db 'Select option (1-3, Enter=Boot): ', 0
+booting_msg db 'Booting kernel...', 13, 10, 0
+bios_enter_msg db 'Attempting to enter BIOS setup...', 13, 10, 0
+bios_success_msg db 'BIOS setup entered successfully.', 13, 10, 0
+reboot_msg db 'Rebooting system...', 13, 10, 0
+
 ; First boot and mode setup messages
 first_boot_header db '╔══════════════════════════════════════════════════════════════════════════════╗', 13, 10
                   db '║                           FEMBOY BOOT LOADER SETUP                          ║', 13, 10
@@ -1059,6 +1071,9 @@ quote8 db '"Booting up with style and grace."', 0
 ; Memory map buffer
 memory_map times (MEMORY_MAP_ENTRIES * 24) db 0
 
-; Boot signature
-times 510-($-$$) db 0
-dw 0xAA55
+; Null IDT for triple fault reboot
+null_idt:
+    dw 0    ; Limit
+    dd 0    ; Base
+
+; No boot signature needed for Stage 2
