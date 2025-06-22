@@ -1,0 +1,57 @@
+# Ignore build artifacts and compiled files
+*.bin
+*.img
+*.o
+*.so
+*.efi
+
+# Ignore compressed and archive files
+*.gz
+*.xz
+*.tar.*
+*.tar
+
+# Ignore kernel and initramfs images
+bzImage
+initramfs.cpio.gz
+linux.tar.xz
+
+# Ignore test outputs
+test
+test2
+
+# Ignore backup files
+*~
+
+# Ignore log files
+*.log
+
+# Ignore hidden system files (OS/IDE)
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Ignore generic temporary files
+*.tmp
+*.swp
+
+# Ignore Makefile outputs (optional, adjust if you want to keep some)
+basic_boot.img
+enhanced_boot.img
+disk.img
+femboy_hybrid.img
+
+# Ignore dependency and config cache files
+*.dep
+*.d
+
+# Ignore initramfs and kernel images inside directories
+initramfs/*
+linux-6.1.1/*
+esp/*
+
+# Exclude specific files you want to keep (uncomment if needed)
+# !README.md
+# !Makefile
+# !*.asm
+# !*.c
